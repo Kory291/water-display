@@ -1,9 +1,15 @@
 #include <Arduino.h>
 #include <WiFi.h>
+#include <esp_http_server.h>
 
 // put function declarations here:
 // sound speed in cm/µS
-# define SOUND_SPEED 0.034
+#define SOUND_SPEED 0.034
+#define SOUND_SPEED_WATER 0.148
+// distance between ultrasonic sensor and water bin in cm
+#define AIR_GAP 30
+// max distance to ground from ultrasonic sensor in cm
+#define MAX_DISTANCE 200
 
 const char* ssid = "foo";
 const char* password = "foo";
@@ -16,6 +22,7 @@ const long timeout_time = 2000;
 
 long duration;
 float distanceCm;
+float fillPercentage;
 
 WiFiServer server(80);
 
@@ -103,23 +110,25 @@ void serve(WiFiClient client) {
   }
 }
 
-float get_distance_measurement() {
+float get_fill_measurement() {
   digitalWrite(trigPin, LOW);
   delayMicroseconds(2);
   digitalWrite(trigPin, HIGH);
   delayMicroseconds(10);
   digitalWrite(trigPin, LOW);
   duration = pulseIn(echoPin, HIGH);
-  distanceCm = duration * SOUND_SPEED / 2;
-  return distanceCm;
+
+  fillPercentage = (1 / 2 * duration * (SOUND_SPEED + SOUND_SPEED_WATER) - AIR_GAP) / MAX_DISTANCE;
+
+  return fillPercentage;
 }
 
 void loop() {
   // put your main code here, to run repeatedly:
   WiFiClient client = server.available();
-  serve(client);
-  distanceCm = get_distance_measurement();
-  Serial.printf("Distance in cm: %f\n", distanceCm);
+  // serve(client);
+  fillPercentage = get_fill_measurement();
+  Serial.printf("Distance in cm: %f\n", fillPercentage);
   delay(1000);
 }
 
