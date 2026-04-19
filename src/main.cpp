@@ -16,7 +16,20 @@
 // max distance to ground from ultrasonic sensor in cm
 #define MAX_DISTANCE 200
 
+// time which drain will be active in seconds
+#define DRAIN_TIME 120
+
+#define uS_TO_S_FACTOR 1000000ULL
+#define TIME_TO_SLEEP  3600
+
+// mode of ESP -> "server" or "client"
+const char* mode = "client";
+
+const boolean debug = true;
+
 static const char *TAG = "esp-rest";
+
+TimerHandle_t drainUpdate = NULL;
 
 #define FILE_PATH_MAX (ESP_VFS_PATH_MAX + 128)
 #define SCRATCH_BUFSIZE (10240)
@@ -30,6 +43,7 @@ const char* ssid = "foo";
 const char* password = "foo";
 const int trigPin = 22;
 const int echoPin = 23;
+const int drainPin = 20;
 
 unsigned long current_time = millis();
 unsigned long previous_time = 0;
@@ -43,9 +57,21 @@ WiFiServer server(80);
 
 String header;
 
+void setup() {
+  // put your setup code here, to run once:
+  Serial.begin(9600);
+  delay(1000);
+
+  setup_wifi();
+  server.begin();
+  setup_pins();
+  esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
+}
+
 void setup_pins() {
   pinMode(trigPin, OUTPUT);
   pinMode(echoPin, INPUT);
+  pinMode(drainPin, OUTPUT);
 }
 
 void setup_wifi() {
@@ -73,56 +99,10 @@ void setup_wifi() {
   Serial.println(WiFi.localIP());
 }
 
-void setup() {
-  // put your setup code here, to run once:
-  Serial.begin(9600);
-  delay(1000);
-
-  setup_wifi();
-  server.begin();
-  setup_pins();
-}
-
-void serve(WiFiClient client) {
-  if (client) {
-    current_time = millis();
-    previous_time = current_time;
-    Serial.println("New client");
-    String current_line = "";
-    while (client.connected() && current_time - previous_time < timeout_time) {
-      current_time = millis();
-      if (client.available()) {
-        char c = client.read();
-        Serial.write(c);
-        header += c;
-        if (c == '\n') {
-          if (current_line.length() == 0) {
-            client.println("HTTP/1.1 200 OK");
-            client.println("Content-type:text/html");
-            client.println("Connection: close");
-            client.println();
-
-            client.println("<!DOCTYPE html><html>");
-            client.println("<head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
-            client.println("<link rel=\"icon\" href=\"data:,\">");
-
-            client.println("<body><h1>ESP32 Web Server</h1>");
-            client.println("</body></html>");
-            client.println();
-            break;
-          } else {
-            current_line = "";
-          }
-        } else if (c != '\r') {
-        current_line += c;
-        }
-      }
-    }
-    header = "";
-    client.stop();
-    Serial.println("Client disconnected.");
-    Serial.println("");
-  }
+void drain() {
+  digitalWrite(drainPin, HIGH);
+  sleep(DRAIN_TIME);
+  digitalWrite(drainPin, LOW);
 }
 
 float get_fill_measurement() {
@@ -206,16 +186,23 @@ esp_err_t start_rest_server(const char *base_path) {
     .handler = measurementUpdateHandler,
     .user_ctx = rest_context
   };
-  httpd_register_uri_handler(server, &measurement_update_uri)
+  httpd_register_uri_handler(server, &measurement_update_uri);
+}
+
+void send_fill_percentage(long fillPercentage) {
+  
 }
 
 void loop() {
   // put your main code here, to run repeatedly:
-  WiFiClient client = server.available();
-  // serve(client);
+  // WiFiClient client = server.available();
   fillPercentage = get_fill_measurement();
-  Serial.printf("Distance in cm: %f\n", fillPercentage);
-  delay(1000);
+  Serial.printf("Fill percantange: %f\n", fillPercentage);
+  send_fill_percentage(fillPercentage);
+  sleep(1);
+  Serial.flush();
+  esp_deep_sleep_start();
 }
+
 
 // put function definitions here:
